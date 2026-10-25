@@ -1,20 +1,11 @@
-import requests, json, re, os
+import requests, json, re, os, time
 
 session = requests.session()
 
-# 配置用户名（一般是邮箱）
-# email = os.environ.get('EMAIL')
-# 配置用户名对应的密码 和上面的email对应上
-# passwd = os.environ.get('PASSWD')
-
-# 从设置的环境变量中的Variables多个邮箱和密码 ,分割
 emails = os.environ.get('EMAIL', '').split(',')
 passwords = os.environ.get('PASSWD', '').split(',')
 
-# server酱
 SCKEY = os.environ.get('SCKEY')
-
-# PUSHPLUS
 Token = os.environ.get('TOKEN')
 
 def push(content):
@@ -30,34 +21,44 @@ def push(content):
     else:
         print('未使用消息推送推送！')
 
-# 会不定时更新域名，记得Sync fork
 login_url = 'https://ikuuu.top/auth/login'
 check_url = 'https://ikuuu.top/user/checkin'
 info_url = 'https://ikuuu.top/user/profile'
 
-header = {
+headers = {
     'origin': 'https://ikuuu.top',
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'
+    'referer': 'https://ikuuu.top/auth/login',
+    'accept': 'application/json, text/plain, */*',
+    'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
 
 for email, passwd in zip(emails, passwords):
     session = requests.session()
-    data = {
-        'email': email,
-        'passwd': passwd
-    }
+    session.headers.update(headers)
+    data = {'email': email, 'passwd': passwd}
     try:
+        print(f'[{email}] 获取登录页...')
+        # 先访问登录页获取 cookies / 反爬 token
+        pre = session.get('https://ikuuu.top/auth/login', timeout=15)
+        print(f'登录页状态: {pre.status_code}, 长度: {len(pre.text)}')
+        time.sleep(1)
         print(f'[{email}] 进行登录...')
-        response = json.loads(session.post(url=login_url, headers=header, data=data).text)
-        print(response['msg'])
-        # 获取账号名称
-        # info_html = session.get(url=info_url, headers=header).text
-        # info = "".join(re.findall('(.*?)', info_html, re.S))
-        # 进行签到
-        result = json.loads(session.post(url=check_url, headers=header).text)
-        print(result['msg'])
-        content = result['msg']
-        # 进行推送
+        response = session.post(url=login_url, json=data, timeout=15)
+        print(f'登录响应状态: {response.status_code}')
+        login_resp = json.loads(response.text)
+        print(login_resp.get('msg', str(login_resp)))
+        if login_resp.get('ret') != 0 and login_resp.get('status') != 'success' and '成功' not in login_resp.get('msg', ''):
+            content = f'登录失败: {login_resp.get("msg", str(login_resp))}'
+            print(content)
+            push(content)
+            continue
+        time.sleep(1)
+        result = session.post(url=check_url, timeout=15)
+        print(f'签到响应状态: {result.status_code}')
+        result_json = json.loads(result.text)
+        print(result_json.get('msg', str(result_json)))
+        content = result_json.get('msg', '签到完成')
         push(content)
     except Exception as e:
         content = f'签到失败: {repr(e)}'
